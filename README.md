@@ -32,4 +32,5 @@ images = svc.cutout(
 - `collections` is required when creating the service.
 - `dataset_type` is selected per `cutout(...)` call and defaults to `"visit_image"`.
 - `cutout(...)` takes center pixel coordinates (`x`, `y`) and size (`h`, `w`).
+- If `x`/`y` are omitted they default to image center; if `h`/`w` are omitted they default to full image size.
 - The sky-coordinate mode (`ra/dec/time`) is wired and needs a `sky_resolver` callback.

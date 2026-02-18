@@ -57,6 +57,17 @@ def test_visit_detector_cutout_calls_butler_default_dataset_type():
     assert butler.calls == [("visit_image", {"visit": 123, "detector": 9})]
 
 
+def test_visit_detector_cutout_defaults_to_full_image_geometry():
+    butler = FakeButler()
+    svc = nt.cutouts_from_butler("dp1", collections="test", butler=butler)
+
+    out = svc.cutout(visit=123, detector=9)
+
+    assert len(out) == 1
+    assert out[0].token in {"root", "cutout"}
+    assert butler.calls == [("visit_image", {"visit": 123, "detector": 9})]
+
+
 def test_sky_cutout_requires_resolver():
     butler = FakeButler()
     svc = nt.cutouts_from_butler("dp1", collections="test", butler=butler)
@@ -97,7 +108,7 @@ def test_invalid_args():
         svc.cutout(ra=1, dec=2, x=10, y=10, h=0, w=5)
 
     with pytest.raises(ValueError):
-        svc.cutout(ra=1, dec=2, y=10, h=5, w=5)
+        svc.cutout(ra=1, dec=2, x=10, y=10, h=-1, w=5)
 
     with pytest.raises(ValueError):
-        svc.cutout(ra=1, dec=2, x=10, y=10, h=5)
+        svc.cutout(ra=1, dec=2, x=10, y=10, h=5, w=0)

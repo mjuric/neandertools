@@ -35,7 +35,6 @@ class ButlerCutoutService:
         limit: Optional[int] = None,
     ) -> list[Any]:
         _validate_request(ra=ra, dec=dec, x=x, y=y, h=h, w=w, visit=visit, detector=detector)
-        assert x is not None and y is not None and h is not None and w is not None
 
         if visit is not None:
             image = self._butler.get(dataset_type, dataId={"visit": visit, "detector": detector})
@@ -55,15 +54,25 @@ class ButlerCutoutService:
         images = [self._butler.get(dataset_type, dataId=data_id) for data_id in data_ids]
         return [self._extract_cutout(image, x=x, y=y, h=h, w=w) for image in images]
 
-    def _extract_cutout(self, image: Any, x: float, y: float, h: int, w: int) -> Any:
+    def _extract_cutout(
+        self,
+        image: Any,
+        x: Optional[float],
+        y: Optional[float],
+        h: Optional[int],
+        w: Optional[int],
+    ) -> Any:
         if not hasattr(image, "getBBox") or not hasattr(image, "Factory"):
             return image
 
         bbox = image.getBBox()
-        w_i = int(w)
-        h_i = int(h)
-        x0 = int(round(x - (w_i - 1) / 2.0))
-        y0 = int(round(y - (h_i - 1) / 2.0))
+        x_center = float(x) if x is not None else (bbox.getMinX() + bbox.getMaxX()) / 2.0
+        y_center = float(y) if y is not None else (bbox.getMinY() + bbox.getMaxY()) / 2.0
+        w_i = int(w) if w is not None else int(bbox.getMaxX() - bbox.getMinX() + 1)
+        h_i = int(h) if h is not None else int(bbox.getMaxY() - bbox.getMinY() + 1)
+
+        x0 = int(round(x_center - (w_i - 1) / 2.0))
+        y0 = int(round(y_center - (h_i - 1) / 2.0))
         x1 = x0 + w_i - 1
         y1 = y0 + h_i - 1
 
@@ -99,12 +108,10 @@ def _validate_request(
     visit: Optional[int],
     detector: Optional[int],
 ) -> None:
-    if x is None or y is None:
-        raise ValueError("Both x and y must be provided")
-    if h is None or w is None:
-        raise ValueError("Both h and w must be provided")
-    if h <= 0 or w <= 0:
-        raise ValueError("h and w must be > 0")
+    if h is not None and h <= 0:
+        raise ValueError("h must be > 0")
+    if w is not None and w <= 0:
+        raise ValueError("w must be > 0")
 
     visit_mode = visit is not None or detector is not None
     sky_mode = ra is not None or dec is not None
