@@ -15,6 +15,8 @@ def cutouts_grid(
     ncols: int = 5,
     titles: Sequence[str] | None = None,
     figsize_per_cell: tuple[float, float] = (3.2, 3.2),
+    qmin: float = 0.0,
+    qmax: float = 0.99,
     add_colorbar: bool = False,
     cmap: str = "gray_r",
     show: bool = True,
@@ -32,6 +34,10 @@ def cutouts_grid(
         Optional per-image titles.
     figsize_per_cell : tuple of float, optional
         Width and height per subplot cell.
+    qmin : float, optional
+        Lower quantile used for ``vmin`` (NaN-aware).
+    qmax : float, optional
+        Upper quantile used for ``vmax`` (NaN-aware).
     add_colorbar : bool, optional
         If ``True``, draw one colorbar per subplot.
     cmap : str, optional
@@ -47,6 +53,10 @@ def cutouts_grid(
     n = len(images)
     if n == 0:
         raise ValueError("No images provided.")
+    if not (0.0 <= qmin <= 1.0 and 0.0 <= qmax <= 1.0):
+        raise ValueError("qmin and qmax must be in [0, 1]")
+    if qmax < qmin:
+        raise ValueError("qmax must be >= qmin")
 
     nrows = math.ceil(n / ncols)
     fig, axes = plt.subplots(
@@ -65,8 +75,8 @@ def cutouts_grid(
         else:
             arr = np.asarray(obj.array)
 
-        vmin = np.quantile(arr, 0.0)
-        vmax = np.quantile(arr, 0.99)
+        vmin = np.nanquantile(arr, qmin)
+        vmax = np.nanquantile(arr, qmax)
         if vmax <= vmin:
             vmax = vmin + 1e-12
 

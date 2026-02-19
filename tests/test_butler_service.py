@@ -25,7 +25,7 @@ class FakeImage:
     def __init__(self, token="root", array=None):
         self.token = token
         if array is None:
-            self._array = np.arange(101 * 101, dtype=np.int64).reshape(101, 101)
+            self._array = np.arange(101 * 101, dtype=np.float32).reshape(101, 101)
         else:
             self._array = array
 
@@ -42,7 +42,7 @@ class FakeImage:
             if hasattr(image, "getMinX") and hasattr(image, "getMaxX"):
                 w = image.getMaxX() - image.getMinX() + 1
                 h = image.getMaxY() - image.getMinY() + 1
-                return FakeImage(token="blank", array=np.zeros((h, w), dtype=np.int64))
+                return FakeImage(token="blank", array=np.zeros((h, w), dtype=np.float32))
             if (
                 bbox.getMinX() < image.getBBox().getMinX()
                 or bbox.getMinY() < image.getBBox().getMinY()
@@ -60,7 +60,7 @@ class FakeImage:
         (bbox,) = args
         w = bbox.getMaxX() - bbox.getMinX() + 1
         h = bbox.getMaxY() - bbox.getMinY() + 1
-        return FakeImage(token="blank", array=np.zeros((h, w), dtype=np.int64))
+        return FakeImage(token="blank", array=np.zeros((h, w), dtype=np.float32))
 
     class _Wcs:
         class _Pixel:
@@ -98,7 +98,7 @@ class FakeImageSilentClip(FakeImage):
             if hasattr(image, "getMinX") and hasattr(image, "getMaxX"):
                 w = image.getMaxX() - image.getMinX() + 1
                 h = image.getMaxY() - image.getMinY() + 1
-                return FakeImageSilentClip(token="blank", array=np.zeros((h, w), dtype=np.int64))
+                return FakeImageSilentClip(token="blank", array=np.zeros((h, w), dtype=np.float32))
             x0 = max(bbox.getMinX(), image.getBBox().getMinX())
             y0 = max(bbox.getMinY(), image.getBBox().getMinY())
             x1 = min(bbox.getMaxX(), image.getBBox().getMaxX())
@@ -113,7 +113,7 @@ class FakeImageSilentClip(FakeImage):
         (bbox,) = args
         w = bbox.getMaxX() - bbox.getMinX() + 1
         h = bbox.getMaxY() - bbox.getMinY() + 1
-        return FakeImageSilentClip(token="blank", array=np.zeros((h, w), dtype=np.int64))
+        return FakeImageSilentClip(token="blank", array=np.zeros((h, w), dtype=np.float32))
 
 
 class FakeButlerSilentClip(FakeButler):
@@ -148,7 +148,7 @@ def test_edge_cutout_is_padded_by_default():
 
     assert arr.shape == (5, 5)
     assert arr[2, 2] == 0  # requested center pixel maps to image(0, 0)
-    assert arr[0, 0] == 0  # padded corner
+    assert np.isnan(arr[0, 0])  # padded corner
     assert arr[2, 3] == 1  # image(1, 0)
     assert arr[3, 2] == 101  # image(0, 1)
 
@@ -173,6 +173,7 @@ def test_edge_cutout_pads_when_factory_silently_clips():
 
     assert arr.shape == (5, 5)
     assert arr[2, 2] == 0
+    assert np.isnan(arr[0, 0])
 
 
 def test_visit_detector_cutout_defaults_to_full_image_geometry():

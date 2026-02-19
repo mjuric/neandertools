@@ -68,7 +68,7 @@ class ButlerCutoutService:
             Data IDs selecting source images. Both are required.
         pad : bool, optional
             If ``True`` (default), edge-overlapping requests are padded with
-            zeros so output shape remains ``(h, w)`` and the requested center
+            ``NaN`` so output shape remains ``(h, w)`` and the requested center
             stays centered. If ``False``, requests are clipped to image bounds.
 
         Returns
@@ -254,7 +254,8 @@ class ButlerCutoutService:
         if source_array is None:
             return source_cutout
 
-        padded_array = np.zeros((h, w), dtype=source_array.dtype)
+        padded_dtype = np.result_type(source_array.dtype, np.float32)
+        padded_array = np.full((h, w), np.nan, dtype=padded_dtype)
 
         x_off = clipped_box.getMinX() - requested_box.getMinX()
         y_off = clipped_box.getMinY() - requested_box.getMinY()
