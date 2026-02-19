@@ -181,6 +181,8 @@ def cutouts_gif(
     dpi: int = 100,
     title_fontsize: float = 12.0,
     show: bool = False,
+    auto_vlims: bool = False,
+    contrast: float = 0.1,
 ) -> Path:
     """Save cutouts as an animated GIF.
 
@@ -211,6 +213,8 @@ def cutouts_gif(
         warp_common_grid=warp_common_grid,
         warp_shape=warp_shape,
         warp_pixel_scale_arcsec=warp_pixel_scale_arcsec,
+        auto_vlims=auto_vlims,
+        contrast=contrast,
     )
     if ne_indicator_scale <= 0:
         raise ValueError("ne_indicator_scale must be > 0")
