@@ -149,6 +149,7 @@ def cutouts_grid(
             # _warp_to_common_radec_grid edited to have RA increase to the left
             # N/E vectors calculated from the actual WCS
             ax.set_xlabel("Delta R.A. (arcsec)")
+            ax.invert_xaxis() # East to the left. 
             if c == 0:
                 ax.set_ylabel("Delta Dec. (arcsec)")
 
