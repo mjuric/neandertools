@@ -144,6 +144,7 @@ def cutouts_grid(
             fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         if warp_common_grid:
             ax.set_xlabel("Delta R.A. (arcsec)")
+            ax.invert_xaxis() # East to the left. 
             if c == 0:
                 ax.set_ylabel("Delta Dec. (arcsec)")
         if show_ne_indicator:
