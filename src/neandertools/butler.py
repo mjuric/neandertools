@@ -266,6 +266,7 @@ class ButlerCutoutService:
                 padded = image.Factory(requested_box, image.getWcs())
             else:
                 padded = image.Factory(requested_box)
+            self._propagate_exposure_metadata(image, padded)
             padded_target = self._get_primary_array(padded)
             if padded_target is not None:
                 padded_target[:] = padded_array
@@ -274,6 +275,22 @@ class ButlerCutoutService:
             pass
 
         return padded_array
+
+    @staticmethod
+    def _propagate_exposure_metadata(source: Any, target: Any) -> None:
+        """Copy exposure metadata (especially VisitInfo) from source to target."""
+        try:
+            if hasattr(source, "getInfo") and hasattr(target, "setInfo"):
+                source_info = source.getInfo()
+                if source_info is not None:
+                    try:
+                        import lsst.afw.image as afwImage
+
+                        target.setInfo(afwImage.ExposureInfo(source_info))
+                    except Exception:
+                        target.setInfo(source_info)
+        except Exception:
+            pass
 
     @staticmethod
     def _matches_requested_box(cutout: Any, requested_box: Any, h: int, w: int) -> bool:

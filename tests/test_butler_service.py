@@ -22,12 +22,13 @@ class FakeBBox:
 
 
 class FakeImage:
-    def __init__(self, token="root", array=None):
+    def __init__(self, token="root", array=None, info=None):
         self.token = token
         if array is None:
             self._array = np.arange(101 * 101, dtype=np.float32).reshape(101, 101)
         else:
             self._array = array
+        self._info = info
 
     def getBBox(self):
         return FakeBBox()
@@ -55,7 +56,7 @@ class FakeImage:
             y0 = bbox.getMinY() - image.getBBox().getMinY()
             x1 = bbox.getMaxX() - image.getBBox().getMinX() + 1
             y1 = bbox.getMaxY() - image.getBBox().getMinY() + 1
-            return FakeImage(token="cutout", array=image.getArray()[y0:y1, x0:x1].copy())
+            return FakeImage(token="cutout", array=image.getArray()[y0:y1, x0:x1].copy(), info=image.getInfo())
 
         (bbox,) = args
         w = bbox.getMaxX() - bbox.getMinX() + 1
@@ -80,6 +81,12 @@ class FakeImage:
     def getWcs(self):
         return FakeImage._Wcs()
 
+    def getInfo(self):
+        return self._info
+
+    def setInfo(self, info):
+        self._info = info
+
 
 class FakeButler:
     def __init__(self):
@@ -87,7 +94,7 @@ class FakeButler:
 
     def get(self, dataset_type, dataId=None):
         self.calls.append((dataset_type, dataId))
-        return {"data": dataId} if dataset_type == "raw" else FakeImage()
+        return {"data": dataId} if dataset_type == "raw" else FakeImage(info={"visitInfo": {"id": 2024110800253}})
 
 
 class FakeImageSilentClip(FakeImage):
@@ -108,7 +115,11 @@ class FakeImageSilentClip(FakeImage):
             sy0 = y0 - image.getBBox().getMinY()
             sx1 = x1 - image.getBBox().getMinX() + 1
             sy1 = y1 - image.getBBox().getMinY() + 1
-            return FakeImageSilentClip(token="cutout", array=image.getArray()[sy0:sy1, sx0:sx1].copy())
+            return FakeImageSilentClip(
+                token="cutout",
+                array=image.getArray()[sy0:sy1, sx0:sx1].copy(),
+                info=image.getInfo(),
+            )
 
         (bbox,) = args
         w = bbox.getMaxX() - bbox.getMinX() + 1
@@ -119,7 +130,11 @@ class FakeImageSilentClip(FakeImage):
 class FakeButlerSilentClip(FakeButler):
     def get(self, dataset_type, dataId=None):
         self.calls.append((dataset_type, dataId))
-        return {"data": dataId} if dataset_type == "raw" else FakeImageSilentClip()
+        return (
+            {"data": dataId}
+            if dataset_type == "raw"
+            else FakeImageSilentClip(info={"visitInfo": {"id": 2024110800253}})
+        )
 
 
 def test_factory_uses_provided_butler():
@@ -151,6 +166,7 @@ def test_edge_cutout_is_padded_by_default():
     assert np.isnan(arr[0, 0])  # padded corner
     assert arr[2, 3] == 1  # image(1, 0)
     assert arr[3, 2] == 101  # image(0, 1)
+    assert out[0].getInfo() == {"visitInfo": {"id": 2024110800253}}
 
 
 def test_edge_cutout_can_disable_padding():
@@ -174,6 +190,7 @@ def test_edge_cutout_pads_when_factory_silently_clips():
     assert arr.shape == (5, 5)
     assert arr[2, 2] == 0
     assert np.isnan(arr[0, 0])
+    assert out[0].getInfo() == {"visitInfo": {"id": 2024110800253}}
 
 
 def test_visit_detector_cutout_defaults_to_full_image_geometry():

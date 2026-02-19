@@ -156,6 +156,7 @@ def cutouts_gif(
     cmap: str = "gray_r",
     frame_duration_ms: int = 300,
     dpi: int = 100,
+    title_fontsize: float = 8.0,
     show: bool = False,
 ) -> Path:
     """Save cutouts as an animated GIF.
@@ -172,6 +173,8 @@ def cutouts_gif(
         raise ValueError("frame_duration_ms must be > 0")
     if dpi <= 0:
         raise ValueError("dpi must be > 0")
+    if title_fontsize <= 0:
+        raise ValueError("title_fontsize must be > 0")
 
     arrays, vmins, vmaxs, extent = _prepare_cutouts_for_display(
         images=images,
@@ -208,15 +211,21 @@ def cutouts_gif(
         ax.set_xticks([])
         ax.set_yticks([])
 
-    frame_title = ax.set_title("")
+    if titles is None:
+        auto_titles = [_build_cutout_metadata_title(obj) for obj in images]
+    else:
+        auto_titles = [str(t) for t in titles]
+
+    frame_title = ax.set_title("", fontsize=title_fontsize)
     fps = 1000.0 / float(frame_duration_ms)
     writer = PillowWriter(fps=fps)
     with writer.saving(fig, str(output_path), dpi=dpi):
         for i, arr in enumerate(arrays):
             im.set_data(arr)
             im.set_clim(vmins[i], vmaxs[i])
-            if titles is not None:
-                frame_title.set_text(str(titles[i]))
+            title_text = auto_titles[i]
+            if title_text:
+                frame_title.set_text(title_text)
             elif len(arrays) > 1:
                 frame_title.set_text(f"Frame {i + 1}/{len(arrays)}")
             writer.grab_frame()
@@ -364,6 +373,104 @@ def _extract_image_array(obj: Any) -> np.ndarray:
         if hasattr(img, "getArray"):
             return np.asarray(img.getArray())
     raise ValueError("Unsupported image object: could not find array data.")
+
+
+def _build_cutout_metadata_title(obj: Any) -> str:
+    visit = _extract_visit_id(obj)
+    detector = _extract_detector_id(obj)
+    band = _extract_band(obj)
+    midpoint = _extract_midpoint_time_iso(obj)
+    line1 = f"visit={visit} det={detector} band={band}"
+    line2 = f"mid={midpoint}"
+    return f"{line1}\n{line2}"
+
+
+def _extract_visit_id(obj: Any) -> str:
+    try:
+        info = obj.getInfo()
+        vi = info.getVisitInfo() if info is not None else None
+        if vi is not None and hasattr(vi, "getId"):
+            visit_id = vi.getId()
+            if visit_id is not None:
+                return str(visit_id)
+    except Exception:
+        pass
+    md = _extract_metadata(obj)
+    for key in ("VISIT", "visit", "EXPID", "expId"):
+        if key in md:
+            return str(md[key])
+    return "?"
+
+
+def _extract_detector_id(obj: Any) -> str:
+    try:
+        if hasattr(obj, "getDetector"):
+            det = obj.getDetector()
+            if det is not None and hasattr(det, "getId"):
+                return str(det.getId())
+    except Exception:
+        pass
+    md = _extract_metadata(obj)
+    for key in ("DETECTOR", "detector", "CCDNUM"):
+        if key in md:
+            return str(md[key])
+    return "?"
+
+
+def _extract_band(obj: Any) -> str:
+    try:
+        if hasattr(obj, "getFilter"):
+            filt = obj.getFilter()
+            if filt is not None:
+                if hasattr(filt, "bandLabel") and filt.bandLabel:
+                    return str(filt.bandLabel)
+                if hasattr(filt, "physicalLabel") and filt.physicalLabel:
+                    return str(filt.physicalLabel)
+                return str(filt)
+    except Exception:
+        pass
+    md = _extract_metadata(obj)
+    for key in ("BAND", "band", "FILTER", "filter"):
+        if key in md:
+            return str(md[key])
+    return "?"
+
+
+def _extract_midpoint_time_iso(obj: Any) -> str:
+    try:
+        from astropy.time import TimeDelta
+        import astropy.units as u
+
+        info = obj.getInfo()
+        vi = info.getVisitInfo() if info is not None else None
+        if vi is not None and hasattr(vi, "getDate") and vi.getDate() is not None:
+            t0 = vi.getDate().toAstropy()
+            exp_time = float(vi.getExposureTime()) if hasattr(vi, "getExposureTime") else 0.0
+            tm = t0 + TimeDelta(0.5 * exp_time * u.s)
+            return tm.utc.isot
+    except Exception:
+        pass
+    md = _extract_metadata(obj)
+    for key in ("DATE-AVG", "DATE-OBS", "MJD-MID", "MJD-OBS"):
+        if key in md:
+            return str(md[key])
+    return "?"
+
+
+def _extract_metadata(obj: Any) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    try:
+        if hasattr(obj, "getMetadata"):
+            md = obj.getMetadata()
+            if md is not None:
+                for name in md.names():
+                    try:
+                        out[name] = md.getScalar(name)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return out
 
 
 def _warp_to_common_radec_grid(
