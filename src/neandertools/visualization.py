@@ -28,7 +28,7 @@ def cutouts_grid(
     show_ne_indicator: bool = False,
     ne_indicator_scale: float = 0.10,
     add_colorbar: bool = False,
-    cmap: str = "gray_r",
+    cmap: str = "gray",
     show: bool = True,
 ):
     """Display images in a grid with linear quantile normalization.
@@ -166,7 +166,7 @@ def cutouts_gif(
     warp_pixel_scale_arcsec: float | None = None,
     show_ne_indicator: bool = False,
     ne_indicator_scale: float = 0.10,
-    cmap: str = "gray_r",
+    cmap: str = "gray",
     frame_duration_ms: int = 300,
     dpi: int = 100,
     title_fontsize: float = 8.0,
