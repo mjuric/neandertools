@@ -16,7 +16,7 @@ import numpy as np
 
 from .trackbuilder import query_ephemeris, calculate_polygons
 from .imagefinder import find_overlapping_images, interpolate_position, create_cutout
-from .imagebuilder import get_exposure, cutout_to_png, create_gif
+from .imagebuilder import get_exposure, cutout_to_png, create_gif, normalize_cutouts
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,8 @@ class AsteroidCutoutPipeline:
         self,
         output_path: Union[str, Path] = "asteroid.gif",
         frame_duration_ms: int = 500,
+        match_background: bool = True,
+        match_noise: bool = False,
     ) -> Path:
         """Execute the full pipeline and write an animated GIF.
 
@@ -99,6 +101,12 @@ class AsteroidCutoutPipeline:
             Output GIF file path.
         frame_duration_ms : int
             Duration of each GIF frame in milliseconds.
+        match_background : bool
+            If ``True``, subtract per-cutout background so all frames share
+            the same zero level. Strongly recommended for GIFs.
+        match_noise : bool
+            If ``True``, also divide by per-cutout noise RMS so all frames
+            share the same noise scale (SNR-like display).
 
         Returns
         -------
@@ -117,6 +125,8 @@ class AsteroidCutoutPipeline:
         gif_path = self._create_gif(
             output_path=output_path,
             frame_duration_ms=frame_duration_ms,
+            match_background=match_background,
+            match_noise=match_noise,
         )
         return gif_path
 
@@ -235,9 +245,23 @@ class AsteroidCutoutPipeline:
         self,
         output_path: Union[str, Path],
         frame_duration_ms: int,
+        match_background: bool = True,
+        match_noise: bool = False,
     ) -> Path:
         """Step 5: Render cutouts to PNGs and assemble into a GIF."""
         output_path = Path(output_path)
+
+        # Normalize all cutouts to a shared background/noise scale
+        raw_arrays = [c.image.array for c in self.cutouts]
+        if match_background or match_noise:
+            norm_arrays, vmin, vmax = normalize_cutouts(
+                raw_arrays,
+                match_background=match_background,
+                match_noise=match_noise,
+            )
+        else:
+            norm_arrays = [None] * len(self.cutouts)
+            vmin, vmax = None, None
 
         # Use a temp directory for intermediate PNGs
         tmpdir = tempfile.mkdtemp(prefix="neandertools_")
@@ -245,7 +269,11 @@ class AsteroidCutoutPipeline:
         for i, (cutout, meta) in enumerate(zip(self.cutouts, self.frame_metadata)):
             title = f"{meta['band']}-band  {meta['time'].utc.iso[:16]}"
             png_path = os.path.join(tmpdir, f"frame_{i:04d}.png")
-            cutout_to_png(cutout, png_path, title=title)
+            cutout_to_png(
+                cutout, png_path, title=title,
+                vmin=vmin, vmax=vmax,
+                array_override=norm_arrays[i] if norm_arrays[i] is not None else None,
+            )
 
         logger.info("Creating GIF with %d frames -> %s", len(self.cutouts), output_path)
         gif_path = create_gif(
