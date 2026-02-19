@@ -6,4 +6,6 @@ dist/
 build/
 *.egg-info/
 cutouts.gif
+cutout.gif
 *~
+**/.ipynb_checkpoints/
