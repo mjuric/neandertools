@@ -8,7 +8,6 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-from astropy.visualization import AsinhStretch, ImageNormalize, ZScaleInterval
 
 
 def cutouts_grid(
@@ -16,13 +15,11 @@ def cutouts_grid(
     ncols: int = 5,
     titles: Sequence[str] | None = None,
     figsize_per_cell: tuple[float, float] = (3.2, 3.2),
-    zscale_contrast: float = 0.25,
-    asinh_a: float = 0.1,
     add_colorbar: bool = False,
-    cmap: str = "gray",
+    cmap: str = "gray_r",
     show: bool = True,
 ):
-    """Display images in a grid with zscale+asinh normalization.
+    """Display images in a grid with linear quantile normalization.
 
     Parameters
     ----------
@@ -35,10 +32,6 @@ def cutouts_grid(
         Optional per-image titles.
     figsize_per_cell : tuple of float, optional
         Width and height per subplot cell.
-    zscale_contrast : float, optional
-        Contrast value passed to ``ZScaleInterval``.
-    asinh_a : float, optional
-        ``a`` parameter for ``AsinhStretch``.
     add_colorbar : bool, optional
         If ``True``, draw one colorbar per subplot.
     cmap : str, optional
@@ -63,9 +56,6 @@ def cutouts_grid(
         squeeze=False,
     )
 
-    interval = ZScaleInterval(contrast=zscale_contrast)
-    stretch = AsinhStretch(a=asinh_a)
-
     for i, obj in enumerate(images):
         r, c = divmod(i, ncols)
         ax = axes[r][c]
@@ -75,13 +65,16 @@ def cutouts_grid(
         else:
             arr = np.asarray(obj.array)
 
-        vmin, vmax = interval.get_limits(arr)
-        norm = ImageNormalize(vmin=vmin, vmax=vmax, stretch=stretch, clip=True)
+        vmin = np.quantile(arr, 0.0)
+        vmax = np.quantile(arr, 0.99)
+        if vmax <= vmin:
+            vmax = vmin + 1e-12
 
         im = ax.imshow(
             arr,
             origin="lower",
-            norm=norm,
+            vmin=vmin,
+            vmax=vmax,
             cmap=cmap,
             interpolation="nearest",
         )
