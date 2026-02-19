@@ -25,6 +25,8 @@ def cutouts_grid(
     warp_common_grid: bool = False,
     warp_shape: tuple[int, int] | None = None,
     warp_pixel_scale_arcsec: float | None = None,
+    show_ne_indicator: bool = False,
+    ne_indicator_scale: float = 0.10,
     add_colorbar: bool = False,
     cmap: str = "gray_r",
     show: bool = True,
@@ -66,6 +68,10 @@ def cutouts_grid(
     warp_pixel_scale_arcsec : float, optional
         Pixel scale of the common grid in arcsec/pixel. If omitted, a robust
         scale is estimated from input WCS objects.
+    show_ne_indicator : bool, optional
+        Draw a small North/East indicator in the top-right of each panel.
+    ne_indicator_scale : float, optional
+        Indicator arrow length as a fraction of axis span.
     add_colorbar : bool, optional
         If ``True``, draw one colorbar per subplot.
     cmap : str, optional
@@ -79,7 +85,7 @@ def cutouts_grid(
         ``(fig, axes)`` from matplotlib.
     """
     n = len(images)
-    arrays, vmins, vmaxs, extent = _prepare_cutouts_for_display(
+    arrays, vmins, vmaxs, extents, ne_vectors = _prepare_cutouts_for_display(
         images=images,
         qmin=qmin,
         qmax=qmax,
@@ -91,6 +97,8 @@ def cutouts_grid(
         warp_shape=warp_shape,
         warp_pixel_scale_arcsec=warp_pixel_scale_arcsec,
     )
+    if ne_indicator_scale <= 0:
+        raise ValueError("ne_indicator_scale must be > 0")
 
     nrows = math.ceil(n / ncols)
     fig, axes = plt.subplots(
@@ -111,12 +119,13 @@ def cutouts_grid(
             vmax=vmaxs[i],
             cmap=cmap,
             interpolation="nearest",
-            extent=extent,
+            extent=extents[i],
         )
 
-        ax.set_xticks([])
-        ax.set_yticks([])
         ax.set_aspect("equal")
+        ax.set_xlabel("Delta x (arcsec)")
+        if c == 0:
+            ax.set_ylabel("Delta y (arcsec)")
 
         if titles is not None:
             ax.set_title(titles[i], fontsize=10)
@@ -127,6 +136,8 @@ def cutouts_grid(
             ax.set_xlabel("Delta R.A. (arcsec)")
             if c == 0:
                 ax.set_ylabel("Delta Dec. (arcsec)")
+        if show_ne_indicator:
+            _draw_ne_indicator(ax, ne_vectors[i], scale_frac=ne_indicator_scale)
 
     for j in range(n, nrows * ncols):
         r, c = divmod(j, ncols)
@@ -153,6 +164,8 @@ def cutouts_gif(
     warp_common_grid: bool = False,
     warp_shape: tuple[int, int] | None = None,
     warp_pixel_scale_arcsec: float | None = None,
+    show_ne_indicator: bool = False,
+    ne_indicator_scale: float = 0.10,
     cmap: str = "gray_r",
     frame_duration_ms: int = 300,
     dpi: int = 100,
@@ -162,7 +175,8 @@ def cutouts_gif(
     """Save cutouts as an animated GIF.
 
     Parameters are analogous to ``cutouts_grid``; each image is rendered as one
-    frame of the output GIF.
+    frame of the output GIF. When ``titles`` is omitted, metadata-derived
+    two-line titles are used.
 
     Returns
     -------
@@ -176,7 +190,7 @@ def cutouts_gif(
     if title_fontsize <= 0:
         raise ValueError("title_fontsize must be > 0")
 
-    arrays, vmins, vmaxs, extent = _prepare_cutouts_for_display(
+    arrays, vmins, vmaxs, extents, ne_vectors = _prepare_cutouts_for_display(
         images=images,
         qmin=qmin,
         qmax=qmax,
@@ -188,6 +202,8 @@ def cutouts_gif(
         warp_shape=warp_shape,
         warp_pixel_scale_arcsec=warp_pixel_scale_arcsec,
     )
+    if ne_indicator_scale <= 0:
+        raise ValueError("ne_indicator_scale must be > 0")
 
     from matplotlib.animation import PillowWriter
 
@@ -201,15 +217,17 @@ def cutouts_gif(
         vmax=vmaxs[0],
         cmap=cmap,
         interpolation="nearest",
-        extent=extent,
+        extent=extents[0],
     )
     ax.set_aspect("equal")
+    ax.set_xlabel("Delta x (arcsec)")
+    ax.set_ylabel("Delta y (arcsec)")
     if warp_common_grid:
         ax.set_xlabel("Delta R.A. (arcsec)")
         ax.set_ylabel("Delta Dec. (arcsec)")
-    else:
-        ax.set_xticks([])
-        ax.set_yticks([])
+    ne_artists: list[Any] = []
+    if show_ne_indicator:
+        ne_artists = _draw_ne_indicator(ax, ne_vectors[0], scale_frac=ne_indicator_scale)
 
     if titles is None:
         auto_titles = [_build_cutout_metadata_title(obj) for obj in images]
@@ -223,6 +241,13 @@ def cutouts_gif(
         for i, arr in enumerate(arrays):
             im.set_data(arr)
             im.set_clim(vmins[i], vmaxs[i])
+            im.set_extent(extents[i])
+            ax.set_xlim(extents[i][0], extents[i][1])
+            ax.set_ylim(extents[i][2], extents[i][3])
+            if show_ne_indicator:
+                for artist in ne_artists:
+                    artist.remove()
+                ne_artists = _draw_ne_indicator(ax, ne_vectors[i], scale_frac=ne_indicator_scale)
             title_text = auto_titles[i]
             if title_text:
                 frame_title.set_text(title_text)
@@ -249,7 +274,13 @@ def _prepare_cutouts_for_display(
     warp_common_grid: bool,
     warp_shape: tuple[int, int] | None,
     warp_pixel_scale_arcsec: float | None,
-) -> tuple[list[np.ndarray], list[float], list[float], tuple[float, float, float, float] | None]:
+) -> tuple[
+    list[np.ndarray],
+    list[float],
+    list[float],
+    list[tuple[float, float, float, float]],
+    list[tuple[np.ndarray, np.ndarray] | None],
+]:
     n = len(images)
     if n == 0:
         raise ValueError("No images provided.")
@@ -283,7 +314,8 @@ def _prepare_cutouts_for_display(
                 pass
         image_info.append({"wcs": wcs, "x0": x0, "y0": y0})
 
-    extent = None
+    extents: list[tuple[float, float, float, float]] = []
+    ne_vectors: list[tuple[np.ndarray, np.ndarray] | None] = []
     if warp_common_grid:
         if any(info["wcs"] is None for info in image_info):
             raise ValueError("warp_common_grid=True requires WCS for all input cutouts.")
@@ -293,6 +325,13 @@ def _prepare_cutouts_for_display(
             warp_shape=warp_shape,
             warp_pixel_scale_arcsec=warp_pixel_scale_arcsec,
         )
+        extents = [extent] * n
+        ne_vectors = [(np.array([1.0, 0.0]), np.array([0.0, 1.0]))] * n
+    else:
+        for arr, info in zip(arrays, image_info):
+            extent_i, ne_i = _estimate_nonwarp_extent_and_ne(arr, info)
+            extents.append(extent_i)
+            ne_vectors.append(ne_i)
 
     proc_arrays = []
     for arr in arrays:
@@ -330,7 +369,7 @@ def _prepare_cutouts_for_display(
             vmins.append(vmin)
             vmaxs.append(vmax)
 
-    return proc_arrays, vmins, vmaxs, extent
+    return proc_arrays, vmins, vmaxs, extents, ne_vectors
 
 
 def _sigma_clipped_bg_rms(arr: np.ndarray, sigma: float, maxiters: int) -> tuple[float, float]:
@@ -471,6 +510,107 @@ def _extract_metadata(obj: Any) -> dict[str, Any]:
     except Exception:
         pass
     return out
+
+
+def _estimate_nonwarp_extent_and_ne(
+    arr: np.ndarray, info: dict[str, Any]
+) -> tuple[tuple[float, float, float, float], tuple[np.ndarray, np.ndarray] | None]:
+    h, w = arr.shape
+    cx = (w - 1) / 2.0
+    cy = (h - 1) / 2.0
+    wcs = info["wcs"]
+    x0 = float(info["x0"])
+    y0 = float(info["y0"])
+
+    if wcs is None:
+        # Fallback: assume 1 arcsec/pixel and cardinal orientation.
+        scale = 1.0
+        x_arcsec = (np.arange(w, dtype=np.float64) - cx) * scale
+        y_arcsec = (np.arange(h, dtype=np.float64) - cy) * scale
+        extent = (float(x_arcsec[0]), float(x_arcsec[-1]), float(y_arcsec[0]), float(y_arcsec[-1]))
+        return extent, (np.array([1.0, 0.0]), np.array([0.0, 1.0]))
+
+    xc = x0 + cx
+    yc = y0 + cy
+    ra_c, dec_c = wcs.pixelToSkyArray(np.array([xc]), np.array([yc]), degrees=True)
+    ra_x, dec_x = wcs.pixelToSkyArray(np.array([xc + 1.0]), np.array([yc]), degrees=True)
+    ra_y, dec_y = wcs.pixelToSkyArray(np.array([xc]), np.array([yc + 1.0]), degrees=True)
+    cos_dec = max(abs(np.cos(np.deg2rad(float(dec_c[0])))), 1e-6)
+    a11 = _wrap_angle_diff_deg(float(ra_x[0]) - float(ra_c[0])) * cos_dec * 3600.0
+    a21 = (float(dec_x[0]) - float(dec_c[0])) * 3600.0
+    a12 = _wrap_angle_diff_deg(float(ra_y[0]) - float(ra_c[0])) * cos_dec * 3600.0
+    a22 = (float(dec_y[0]) - float(dec_c[0])) * 3600.0
+    jac = np.array([[a11, a12], [a21, a22]], dtype=np.float64)  # pix -> (E,N) arcsec
+
+    sx = float(np.hypot(a11, a21))
+    sy = float(np.hypot(a12, a22))
+    scale = float(np.median([v for v in (sx, sy) if np.isfinite(v) and v > 0])) if (sx > 0 or sy > 0) else 1.0
+    if not np.isfinite(scale) or scale <= 0:
+        scale = 1.0
+    x_arcsec = (np.arange(w, dtype=np.float64) - cx) * scale
+    y_arcsec = (np.arange(h, dtype=np.float64) - cy) * scale
+    extent = (float(x_arcsec[0]), float(x_arcsec[-1]), float(y_arcsec[0]), float(y_arcsec[-1]))
+
+    ne_vec: tuple[np.ndarray, np.ndarray] | None = None
+    try:
+        inv = np.linalg.inv(jac)  # (E,N) -> pix
+        p_e = inv @ np.array([1.0, 0.0])
+        p_n = inv @ np.array([0.0, 1.0])
+        # Convert pix vectors into displayed arcsec vectors (scaled pixel axes).
+        d_e = scale * p_e
+        d_n = scale * p_n
+        if np.all(np.isfinite(d_e)) and np.all(np.isfinite(d_n)):
+            ne_vec = (d_e.astype(np.float64), d_n.astype(np.float64))
+    except Exception:
+        ne_vec = None
+    return extent, ne_vec
+
+
+def _draw_ne_indicator(
+    ax: Any,
+    ne_vec: tuple[np.ndarray, np.ndarray] | None,
+    *,
+    scale_frac: float,
+) -> list[Any]:
+    artists: list[Any] = []
+    if ne_vec is None:
+        return artists
+    v_e, v_n = ne_vec
+    norm_e = float(np.hypot(v_e[0], v_e[1]))
+    norm_n = float(np.hypot(v_n[0], v_n[1]))
+    if norm_e <= 0 or norm_n <= 0:
+        return artists
+    v_e = v_e / norm_e
+    v_n = v_n / norm_n
+
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    dx = x1 - x0
+    dy = y1 - y0
+    length = scale_frac * min(abs(dx), abs(dy))
+    bx = x1 - 0.12 * dx
+    by = y1 - 0.12 * dy
+
+    e_end = (bx + length * v_e[0], by + length * v_e[1])
+    n_end = (bx + length * v_n[0], by + length * v_n[1])
+    ann_e = ax.annotate(
+        "",
+        xy=e_end,
+        xytext=(bx, by),
+        arrowprops={"arrowstyle": "-|>", "lw": 0.8, "color": "yellow"},
+        zorder=5,
+    )
+    ann_n = ax.annotate(
+        "",
+        xy=n_end,
+        xytext=(bx, by),
+        arrowprops={"arrowstyle": "-|>", "lw": 0.8, "color": "cyan"},
+        zorder=5,
+    )
+    txt_e = ax.text(e_end[0], e_end[1], "E", color="yellow", fontsize=7, ha="left", va="bottom", zorder=6)
+    txt_n = ax.text(n_end[0], n_end[1], "N", color="cyan", fontsize=7, ha="left", va="bottom", zorder=6)
+    artists.extend([ann_e, ann_n, txt_e, txt_n])
+    return artists
 
 
 def _warp_to_common_radec_grid(
