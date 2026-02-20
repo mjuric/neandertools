@@ -132,6 +132,22 @@ def normalize_cutouts(cutout_arrays, match_background=True, match_noise=False):
 
     return processed, vmin, vmax
 
+def _wrap_angle_diff_deg(delta_deg):
+    """Wrap an angle difference into the range [-180, +180) degrees.
+
+    Parameters
+    ----------
+    delta_deg : float
+        Angle difference in degrees.
+
+    Returns
+    -------
+    float
+        Wrapped difference in [-180, +180).
+    """
+    return (delta_deg + 180.0) % 360.0 - 180.0
+
+
 def _get_ne_vectors(cutout_exposure):
     """Compute North and East unit vectors in pixel coordinates.
 
@@ -151,7 +167,6 @@ def _get_ne_vectors(cutout_exposure):
         return None
 
     wcs = cutout_exposure.getWcs()
-    bbox = cutout_exposure.getBBox()
     xy0 = cutout_exposure.getXY0()
     h, w = cutout_exposure.image.array.shape
 
@@ -159,27 +174,23 @@ def _get_ne_vectors(cutout_exposure):
     xc = xy0.getX() + w / 2.0
     yc = xy0.getY() + h / 2.0
 
-    # Small offset in pixels to probe WCS directions
-    delta = 5.0
-
-    # Sky coords at center and at +x, +y offsets
+    # Sky coords at center and at +x, +y offsets (1-pixel step)
     sky_c = wcs.pixelToSkyArray(np.array([xc]), np.array([yc]), degrees=True)
-    sky_x = wcs.pixelToSkyArray(np.array([xc + delta]), np.array([yc]), degrees=True)
-    sky_y = wcs.pixelToSkyArray(np.array([xc]), np.array([yc + delta]), degrees=True)
+    sky_x = wcs.pixelToSkyArray(np.array([xc + 1.0]), np.array([yc]), degrees=True)
+    sky_y = wcs.pixelToSkyArray(np.array([xc]), np.array([yc + 1.0]), degrees=True)
 
     ra_c, dec_c = float(sky_c[0][0]), float(sky_c[1][0])
     cos_dec = max(abs(np.cos(np.radians(dec_c))), 1e-6)
 
-    # Jacobian: pixel offset -> (East, North) in arcsec
-    # East = -dRA * cos(dec),  North = +dDec
-    dra_dx = (float(sky_x[0][0]) - ra_c) * cos_dec
+    # Jacobian: pixel offset -> (RA*cos_dec, Dec) in arcsec
+    # Use _wrap_angle_diff_deg to handle RA wrapping at 0/360 degrees
+    dra_dx = _wrap_angle_diff_deg(float(sky_x[0][0]) - ra_c) * cos_dec
     ddec_dx = float(sky_x[1][0]) - dec_c
-    dra_dy = (float(sky_y[0][0]) - ra_c) * cos_dec
+    dra_dy = _wrap_angle_diff_deg(float(sky_y[0][0]) - ra_c) * cos_dec
     ddec_dy = float(sky_y[1][0]) - dec_c
 
-    # Jacobian maps pixel (dx, dy) -> (east_sky, north_sky)
-    # We want the inverse: given sky North=(0,1) and East=(1,0),
-    # find the pixel direction.
+    # Jacobian maps pixel (dx, dy) -> (East, North)
+    # East = +dRA * cos(dec),  North = +dDec
     jac = np.array([[dra_dx, dra_dy],
                      [ddec_dx, ddec_dy]])
     try:
