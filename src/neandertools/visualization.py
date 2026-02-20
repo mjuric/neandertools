@@ -9,6 +9,7 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+from astropy.visualization import ZScaleInterval, ImageNormalize
 
 
 def cutouts_grid(
@@ -30,6 +31,8 @@ def cutouts_grid(
     add_colorbar: bool = False,
     cmap: str = "gray",
     show: bool = True,
+    auto_vlims: bool = False,
+    contrast: float = 0.1
 ):
     """Display images in a grid with linear quantile normalization.
 
@@ -78,6 +81,10 @@ def cutouts_grid(
         Matplotlib colormap name.
     show : bool, optional
         If ``True``, call ``plt.show()`` before returning.
+    auto_vlims : bool, optional
+        If ``True``, automatically adjust display limits. Overrides the qmin and qmax parameters if True.
+    contrast : float, optional
+        Contrast parameter for automatic display limits when ``auto_vlims=True``. This is passed to ``astropy.visualization.ZScaleInterval`` and controls the aggressiveness of the scaling; higher values result in a smaller range.
 
     Returns
     -------
@@ -96,6 +103,8 @@ def cutouts_grid(
         warp_common_grid=warp_common_grid,
         warp_shape=warp_shape,
         warp_pixel_scale_arcsec=warp_pixel_scale_arcsec,
+        auto_vlims=auto_vlims,
+        contrast=contrast,
     )
     if ne_indicator_scale <= 0:
         raise ValueError("ne_indicator_scale must be > 0")
@@ -172,6 +181,8 @@ def cutouts_gif(
     dpi: int = 100,
     title_fontsize: float = 12.0,
     show: bool = False,
+    auto_vlims: bool = False,
+    contrast: float = 0.1,
 ) -> Path:
     """Save cutouts as an animated GIF.
 
@@ -202,6 +213,8 @@ def cutouts_gif(
         warp_common_grid=warp_common_grid,
         warp_shape=warp_shape,
         warp_pixel_scale_arcsec=warp_pixel_scale_arcsec,
+        auto_vlims=auto_vlims,
+        contrast=contrast,
     )
     if ne_indicator_scale <= 0:
         raise ValueError("ne_indicator_scale must be > 0")
@@ -276,6 +289,8 @@ def _prepare_cutouts_for_display(
     warp_common_grid: bool,
     warp_shape: tuple[int, int] | None,
     warp_pixel_scale_arcsec: float | None,
+    auto_vlims: bool,
+    contrast: float,
 ) -> tuple[
     list[np.ndarray],
     list[float],
@@ -288,7 +303,7 @@ def _prepare_cutouts_for_display(
         raise ValueError("No images provided.")
     if not (0.0 <= qmin <= 1.0 and 0.0 <= qmax <= 1.0):
         raise ValueError("qmin and qmax must be in [0, 1]")
-    if qmax < qmin:
+    if qmax < qmin and not auto_vlims:
         raise ValueError("qmax must be >= qmin")
     if sigma_clip <= 0:
         raise ValueError("sigma_clip must be > 0")
@@ -356,12 +371,19 @@ def _prepare_cutouts_for_display(
         if not finite_parts:
             raise ValueError("No finite pixels available to determine display scale.")
         all_values = np.concatenate(finite_parts)
-        shared_vmin = float(np.quantile(all_values, qmin))
-        shared_vmax = float(np.quantile(all_values, qmax))
-        if shared_vmax <= shared_vmin:
-            shared_vmax = shared_vmin + 1e-12
-        vmins = [shared_vmin] * n
-        vmaxs = [shared_vmax] * n
+        
+        if auto_vlims:
+            norm = ZScaleInterval(contrast=contrast, krej=3).get_limits(all_values)
+            vmins = [norm[0]] * n
+            vmaxs = [norm[1]] * n
+        else:
+            shared_vmin = float(np.quantile(all_values, qmin))
+            shared_vmax = float(np.quantile(all_values, qmax))
+            if shared_vmax <= shared_vmin:
+                shared_vmax = shared_vmin + 1e-12
+            vmins = [shared_vmin] * n
+            vmaxs = [shared_vmax] * n
+        
     else:
         for arr in proc_arrays:
             vmin = float(np.nanquantile(arr, qmin))
@@ -370,6 +392,8 @@ def _prepare_cutouts_for_display(
                 vmax = vmin + 1e-12
             vmins.append(vmin)
             vmaxs.append(vmax)
+
+    print(vmins, vmaxs)
 
     return proc_arrays, vmins, vmaxs, extents, ne_vectors
 
