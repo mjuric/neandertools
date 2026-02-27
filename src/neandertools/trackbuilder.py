@@ -94,9 +94,16 @@ def calculate_polygons(times, ra_deg, dec_deg, time_interval_days=3.0, widening_
             else:
                 break
 
+        # Extend the polygon one step beyond end_index so that consecutive
+        # polygon timespans are seamlessly joined.  Without this, each polygon's
+        # time_end is times[end_index] and the next polygon's time_start is
+        # times[end_index+1], leaving a gap of exactly one ephemeris step.
+        # Observations that fall in that gap are never found by the Butler query.
+        next_index = min(end_index + 1, len(times) - 1)
+
         # Segment start and end sky positions
         a = SkyCoord(ra=ra_deg[current_index], dec=dec_deg[current_index], unit="deg", frame="icrs")
-        b = SkyCoord(ra=ra_deg[end_index], dec=dec_deg[end_index], unit="deg", frame="icrs")
+        b = SkyCoord(ra=ra_deg[next_index], dec=dec_deg[next_index], unit="deg", frame="icrs")
 
         separation = a.separation(b)
         if separation > 1e-10 * u.arcsec:
@@ -117,7 +124,7 @@ def calculate_polygons(times, ra_deg, dec_deg, time_interval_days=3.0, widening_
 
         all_polygons.append({
             "time_start": times[current_index].jd,
-            "time_end": times[end_index].jd,
+            "time_end": times[next_index].jd,
             "polygon_corners": [
                 (corner1.ra.deg, corner1.dec.deg),
                 (corner4.ra.deg, corner4.dec.deg),
