@@ -404,8 +404,6 @@ def _prepare_cutouts_for_display(
             vmins.append(vmin)
             vmaxs.append(vmax)
 
-    print(vmins, vmaxs)
-
     return proc_arrays, vmins, vmaxs, extents, ne_vectors
 
 
@@ -711,7 +709,6 @@ def _warp_to_common_radec_grid(
         if np.isfinite(sy) and sy > 0:
             scale_samples_deg.append(sy)
 
-    ra0 = _circular_mean_deg(ra_centers)
     dec0 = float(np.mean(dec_centers))
 
     if warp_pixel_scale_arcsec is None:
@@ -732,16 +729,21 @@ def _warp_to_common_radec_grid(
 
     cx = (out_w - 1) / 2.0
     cy = (out_h - 1) / 2.0
-    dest_wcs = afwGeom.makeSkyWcs(
-        crpix=geom.Point2D(cx, cy),
-        crval=geom.SpherePoint(ra0 * geom.degrees, dec0 * geom.degrees),
-        cdMatrix=cd,
-    )
 
     warp_ctrl = afwMath.WarpingControl("lanczos3")
     warped_arrays: list[np.ndarray] = []
+    dest_wcs = None  # set per-frame; last value is reused for N/E vector
 
-    for arr, info in zip(arrays, image_info):
+    for arr, info, ra_i, dec_i in zip(arrays, image_info, ra_centers, dec_centers):
+        # Build a per-frame destination WCS centred on this frame's asteroid position.
+        # Using a single mean position as crval shifts the asteroid away from the
+        # output centre in proportion to how far it has moved from that mean —
+        # causing it to drift across the GIF instead of staying fixed.
+        dest_wcs = afwGeom.makeSkyWcs(
+            crpix=geom.Point2D(cx, cy),
+            crval=geom.SpherePoint(ra_i * geom.degrees, dec_i * geom.degrees),
+            cdMatrix=cd,
+        )
         src_wcs = info["wcs"]
         x0 = int(round(info["x0"]))
         y0 = int(round(info["y0"]))

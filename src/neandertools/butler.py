@@ -320,7 +320,7 @@ class ButlerCutoutService:
         clipped_box.clip(bbox)
         if clipped_box.isEmpty():
             return None
-        
+
         source_cutout = image.Factory(image, clipped_box)
 
         source_array = self._get_primary_array(source_cutout)
@@ -333,6 +333,22 @@ class ButlerCutoutService:
         x_off = clipped_box.getMinX() - requested_box.getMinX()
         y_off = clipped_box.getMinY() - requested_box.getMinY()
         padded_array[y_off : y_off + source_array.shape[0], x_off : x_off + source_array.shape[1]] = source_array
+
+        # Reject frames where the target centre is in the WCS-valid but
+        # pixel-trimmed border strip.  The LSST pipeline trims border pixels
+        # without updating the WCS, so skyToPixel() can place the target
+        # outside the actual pixel data.  We detect this by checking whether
+        # the centre region of the padded array contains any finite pixel:
+        # if it is entirely NaN the target has no real data and the frame is
+        # useless.  Checking the array directly is more reliable than a
+        # geometric bbox.contains() test, which can fail by one pixel due to
+        # rounding when the target is right on the boundary.
+        check_h = max(3, min(20, h // 5))
+        check_w = max(3, min(20, w // 5))
+        y0_c = (h - check_h) // 2
+        x0_c = (w - check_w) // 2
+        if not np.any(np.isfinite(padded_array[y0_c : y0_c + check_h, x0_c : x0_c + check_w])):
+            return None
 
         try:
             if hasattr(image, "getWcs") and image.getWcs() is not None:

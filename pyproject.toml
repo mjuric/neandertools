@@ -10,7 +10,12 @@ readme = "README.md"
 requires-python = ">=3.10"
 authors = [{name = "neandertools developers"}]
 license = {text = "MIT"}
-dependencies = []
+dependencies = [
+  "numpy",
+  "astropy",
+  "astroquery",
+  "matplotlib",
+]
 
 [project.optional-dependencies]
 lsst = []
